@@ -248,4 +248,6 @@ void MainWindow::on_checkBoxPID_stateChanged(int arg1)
         ui->doubleSpinBoxSetpoint->clear();
     }
 
+    emit response("Nice!");
+
 }

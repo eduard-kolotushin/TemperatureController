@@ -25,11 +25,6 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->comboBoxBauds->addItems(Bauds);
     ui->comboBoxBauds->setCurrentText("9600"); // Указание "дефолтного" значения
 
-    ui->comboBoxFlowControl->addItem("NO"); // Заполнение настройки окончания строки
-    ui->comboBoxFlowControl->addItem("SOFT");
-    ui->comboBoxFlowControl->addItem("HARD");
-    ui->comboBoxFlowControl->setCurrentText("HARD"); // Указание "дефолтного" значения
-
     ui->comboBoxInput->addItem("2A");
     ui->comboBoxInput->addItem("2B");
     ui->comboBoxInput->addItem("2C");
@@ -66,6 +61,16 @@ MainWindow::MainWindow(QWidget *parent) :
 
 
     ui->Plot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
+
+    ui->Plot2->addGraph();
+    ui->Plot2->xAxis->setRange(-1, 1);
+    ui->Plot2->yAxis->setRange(0, 1);
+
+    ui->Plot2->xAxis->setLabel("Time, s");
+    ui->Plot2->yAxis->setLabel("Power, W");
+
+
+    ui->Plot2->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
 }
 
 MainWindow::~MainWindow()
@@ -84,7 +89,7 @@ QString MainWindow::GetResponse(const QString &str)
 
     if(str == "T")
         res = 1;
-     else if(str == "Output")
+    else if(str == "Output")
         res = 2;
     else if(str == "P")
         res = 3;
@@ -167,12 +172,7 @@ void MainWindow::on_pushButtonAction_clicked()
 
         serial->setBaudRate(ui->comboBoxBauds->currentText().toInt()); // Указание частоты передачи порта
 
-        if (ui->comboBoxFlowControl->currentText() == "NO") // Указание метода контроля передачи данных
-            serial->setFlowControl(QSerialPort::NoFlowControl);
-        if (ui->comboBoxFlowControl->currentText() == "SOFT")
-            serial->setFlowControl(QSerialPort::SoftwareControl);
-        if (ui->comboBoxFlowControl->currentText() == "HARD")
-            serial->setFlowControl(QSerialPort::HardwareControl);
+        serial->setFlowControl(QSerialPort::HardwareControl);
 
         if (!serial->open(QIODevice::ReadWrite)) { // Если попытка открыть порт для ввода\вывода не получилось
             QSerialPort::SerialPortError getError = QSerialPort::NoError; // Ошибка открытия порта
@@ -200,7 +200,6 @@ void MainWindow::on_pushButtonAction_clicked()
     // Блокировка или разблокировка переключателей настроек порта
     ui->comboBoxCOM->setEnabled(ui->pushButtonAction->text() == "Connect");
     ui->comboBoxBauds->setEnabled(ui->pushButtonAction->text() == "Connect");
-    ui->comboBoxFlowControl->setEnabled(ui->pushButtonAction->text() == "Connect");
 
     // Блокировка или разблокировка кнопок отправки и приёма сообщений
     ui->lineEditCommand->setEnabled(ui->pushButtonAction->text() == "Disconnect");
@@ -221,17 +220,21 @@ void MainWindow::Send_request()
     QByteArray arr;
 
     QString T = GetResponse("T");
+    QString P = GetResponse("Output");
 
-    ui->doubleSpinBoxOutputValue->setValue(GetResponse("Output").toDouble());
+    ui->doubleSpinBoxOutputValue->setValue(P.toDouble());
     ui->lineEditInputValue->setText(T);
 
     //emit response("May be good");
 
     ui->Plot->graph(0)->addData(this->timeplot.elapsed()/1000.0, T.toDouble());
+    ui->Plot2->graph(0)->addData(this->timeplot.elapsed()/1000.0, P.toDouble());
 
     ui->Plot->rescaleAxes();
+    ui->Plot2->rescaleAxes();
 
     ui->Plot->replot();
+    ui->Plot2->replot();
 
     return;
 }

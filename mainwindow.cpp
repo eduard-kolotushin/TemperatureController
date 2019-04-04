@@ -7,6 +7,8 @@ MainWindow::MainWindow(QWidget *parent) :
 {
     ui->setupUi(this); // Это QT добавил автоматически
 
+    serial = new QSerialPort();  // Создать новый объект класса "SerialPort"
+
     ui->pushButtonAction->setText("Connect"); // Кнопка работает в режиме "Подключить"
 
     QStringList Bauds; // Заполнение настройки частоты передачи данных
@@ -26,7 +28,7 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->comboBoxFlowControl->addItem("NO"); // Заполнение настройки окончания строки
     ui->comboBoxFlowControl->addItem("SOFT");
     ui->comboBoxFlowControl->addItem("HARD");
-    ui->comboBoxFlowControl->setCurrentText("NO"); // Указание "дефолтного" значения
+    ui->comboBoxFlowControl->setCurrentText("HARD"); // Указание "дефолтного" значения
 
     ui->comboBoxInput->addItem("2A");
     ui->comboBoxInput->addItem("2B");
@@ -40,7 +42,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
     ui->comboBoxOutput->addItem("Out1");
 
-    ui->comboBoxInput->setCurrentText("2A");
+    ui->comboBoxInput->setCurrentText("3A");
     ui->comboBoxOutput->setCurrentText("Out1");
 
     ui->doubleSpinBoxP->clear();
@@ -51,18 +53,101 @@ MainWindow::MainWindow(QWidget *parent) :
 
     on_actionCOMUPD_triggered(); // Обнновить список доступных портов
 
-    serial = new QSerialPort();  // Создать новый объект класса "SerialPort"
-
     connect(this, SIGNAL(response(QString)),
             this, SLOT(get_response(QString))); // Подключить сигнал получения ответа к слоту
     timer.setInterval(200);
     connect(&timer, SIGNAL(timeout()), this, SLOT(Send_request()));
+    ui->Plot->addGraph();
+    ui->Plot->xAxis->setRange(-1, 1);
+    ui->Plot->yAxis->setRange(0, 1);
+
+    ui->Plot->xAxis->setLabel("Time, s");
+    ui->Plot->yAxis->setLabel("Temperature, °C");
+
+
+    ui->Plot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
 }
 
 MainWindow::~MainWindow()
 {
     delete serial; // Удалить ненужные переменные
     delete ui;
+}
+
+QString MainWindow::GetResponse(const QString &str)
+{
+    QByteArray array;
+    QString temp, cmd;
+    int res = 0;
+
+    this->firstWaitTime = ui->spinBoxTimeout->value();
+
+    if(str == "T")
+        res = 1;
+     else if(str == "Output")
+        res = 2;
+    else if(str == "P")
+        res = 3;
+    else if(str == "I")
+        res = 4;
+    else if(str == "D")
+        res = 5;
+    else if(str == "Setpoint")
+        res = 6;
+    else
+        emit response("Wrong string!!!");
+
+    switch (res) {
+    case 1:
+        cmd = ui->comboBoxInput->currentText() + ".value?\n"; break;
+    case 2:
+        cmd = ui->comboBoxOutput->currentText() + ".value?\n"; break;
+    case 3:
+        cmd = "Out1.PID.P?\n"; break;
+    case 4:
+        cmd = "Out1.PID.I?\n"; break;
+    case 5:
+        cmd = "Out1.PID.D?\n"; break;
+    case 6:
+        cmd = "Out1.PID.Setpoint?\n"; break;
+    default:
+        emit response("Error motherfucker!!!");
+    }
+
+    serial->write(cmd.toLocal8Bit());
+
+    if (serial->waitForReadyRead(this->firstWaitTime)) { // Если за данное число миллисекунд что-то пришло
+        array = serial->readAll(); // Прочитать полученные данные
+        while (serial->waitForReadyRead(this->additionalWaitTime)) // Если пришло что-то ещё
+            array += serial->readAll(); // Дописать новые данные
+        temp = QString(array); // Преобразовать полученные данные в строку
+    }
+    return temp;
+}
+
+void MainWindow::SendRequest(const QString &str)
+{
+    if(str == "Init")
+        serial->write((this->CMD1 + ui->comboBoxInput->currentText() + "\n").toLocal8Bit());
+    else if(str == "P")
+        serial->write((this->CMD2 + QString("%1").arg(ui->doubleSpinBoxP->value(),0,'g',6) + "\n").toLocal8Bit());
+    else if(str == "I")
+        serial->write((this->CMD3 + QString("%1").arg(ui->doubleSpinBoxI->value(),0,'g',6) + "\n").toLocal8Bit());
+    else if(str == "D")
+        serial->write((this->CMD4 + QString("%1").arg(ui->doubleSpinBoxD->value(),0,'g',6) + "\n").toLocal8Bit());
+    else if(str == "Setpoint")
+        serial->write((this->CMD5 + QString("%1").arg(ui->doubleSpinBoxSetpoint->value(),0,'g',6) + "\n").toLocal8Bit());
+    else if(str == "Enable")
+        serial->write((this->CMD6 + "\n").toLocal8Bit());
+    else if(str == "Disable")
+        serial->write((this->CMD7 + "\n").toLocal8Bit());
+    else if(str == "PIDOn")
+        serial->write(QByteArray("Out1.PID.Mode = on\n"));
+    else if(str == "PIDOff")
+        serial->write(QByteArray("Out1.PID.Mode = off\n"));
+    else
+        emit response("Wrong string!!!");
+    return;
 }
 
 void MainWindow::on_actionCOMUPD_triggered()
@@ -98,10 +183,16 @@ void MainWindow::on_pushButtonAction_clicked()
         }
 
         ui->pushButtonAction->setText("Disconnect"); // Перевести кнопку в режим "Отключение"
+        timer.start();
 
         ui->lineEditResponse->setText(""); // Опустошить строку с последним текущим ответом
     } else { // Если нам нужно отключиться
+        ui->checkBoxPID->setCheckState(Qt::Unchecked);
+
+        QTest::qWait(100);
+
         this->serial->close(); // Закрыть открытый порт
+        timer.stop();
 
         ui->pushButtonAction->setText("Connect"); // Перевести кнопку в режим "Подключение"
     }
@@ -119,6 +210,7 @@ void MainWindow::on_pushButtonAction_clicked()
     ui->pushButtonDisable->setEnabled(ui->pushButtonAction->text() == "Disconnect");
     ui->checkBoxPID->setEnabled(ui->pushButtonAction->text() == "Disconnect");
     ui->doubleSpinBoxOutputValue->setEnabled(ui->pushButtonAction->text() == "Disconnect");
+    ui->comboBoxInput->setEnabled(ui->pushButtonAction->text() == "Disconnect");
 
     return;
 }
@@ -128,13 +220,18 @@ void MainWindow::Send_request()
     QString str;
     QByteArray arr;
 
-    serial->write((ui->comboBoxOutput->currentText() + ".value?\n").toLocal8Bit());
-    QTest::qWait(60);
-    ui->doubleSpinBoxOutputValue->setValue(QString(serial->readAll()).toDouble());
+    QString T = GetResponse("T");
 
-    serial->write((ui->comboBoxInput->currentText() + ".value?\n").toLocal8Bit());
-    QTest::qWait(60);
-    ui->lineEditInputValue->setText(QString(serial->readAll()));
+    ui->doubleSpinBoxOutputValue->setValue(GetResponse("Output").toDouble());
+    ui->lineEditInputValue->setText(T);
+
+    //emit response("May be good");
+
+    ui->Plot->graph(0)->addData(this->timeplot.elapsed()/1000.0, T.toDouble());
+
+    ui->Plot->rescaleAxes();
+
+    ui->Plot->replot();
 
     return;
 }
@@ -187,58 +284,39 @@ void MainWindow::get_response(const QString &s)
     return;
 }
 
-void MainWindow::on_pushButtonSet_clicked()
-{
-    serial->write((this->CMD1 + ui->comboBoxInput->currentText() + "\n").toLocal8Bit());
-    serial->write((this->CMD2 + QString("%1").arg(ui->doubleSpinBoxP->value(),0,'g',6) + "\n").toLocal8Bit());
-    serial->write((this->CMD3 + QString("%1").arg(ui->doubleSpinBoxI->value(),0,'g',6) + "\n").toLocal8Bit());
-    serial->write((this->CMD4 + QString("%1").arg(ui->doubleSpinBoxD->value(),0,'g',6) + "\n").toLocal8Bit());
-    serial->write((this->CMD5 + QString("%1").arg(ui->doubleSpinBoxSetpoint->value(),0,'g',6) + "\n").toLocal8Bit());
-}
-
 void MainWindow::on_pushButtonHeat_clicked()
 {
-    serial->write((this->CMD6 + "\n").toLocal8Bit());
-    timer.start();
+    SendRequest("Enable");
+    this->timeplot.start();
 }
 
 void MainWindow::on_pushButtonDisable_clicked()
 {
-    serial->write((this->CMD7 + "\n").toLocal8Bit());
-    timer.stop();
+    SendRequest("Disable");
 }
 
 void MainWindow::on_checkBoxPID_stateChanged(int arg1)
 {
     QString str;
-    if(arg1 > 0)
-        serial->write(QByteArray("Out1.PID.Mode = on\n"));
-    else
-        serial->write(QByteArray("Out1.PID.Mode = off\n"));
+    if(arg1 > 0) {
+        SendRequest("PIDOn");
+        SendRequest("Init");
+    }
+    else {
+        SendRequest("PIDOff");
+    }
 
     ui->doubleSpinBoxP->setEnabled(arg1 > 0);
     ui->doubleSpinBoxI->setEnabled(arg1 > 0);
     ui->doubleSpinBoxD->setEnabled(arg1 > 0);
     ui->doubleSpinBoxSetpoint->setEnabled(arg1 > 0);
-    ui->pushButtonSet->setEnabled(arg1 > 0);
+
     if(arg1 > 0)
     {
-        serial->write(QByteArray("Out1.PID.P?\n"));
-        QTest::qWait(100);
-        str = QString(serial->readAll());
-        ui->doubleSpinBoxP->setValue(str.toDouble());
-        serial->write(QByteArray("Out1.PID.I?\n"));
-        QTest::qWait(100);
-        str = QString(serial->readAll());
-        ui->doubleSpinBoxI->setValue(str.toDouble());
-        serial->write(QByteArray("Out1.PID.D?\n"));
-        QTest::qWait(100);
-        str = QString(serial->readAll());
-        ui->doubleSpinBoxD->setValue(str.toDouble());
-        serial->write(QByteArray("Out1.PID.Setpoint?\n"));
-        QTest::qWait(100);
-        str = QString(serial->readAll());
-        ui->doubleSpinBoxSetpoint->setValue(str.toDouble());
+        ui->doubleSpinBoxP->setValue(GetResponse("P").toDouble());
+        ui->doubleSpinBoxI->setValue(GetResponse("I").toDouble());
+        ui->doubleSpinBoxD->setValue(GetResponse("D").toDouble());
+        ui->doubleSpinBoxSetpoint->setValue(GetResponse("Setpoint").toDouble());
     }
     else
     {
@@ -247,7 +325,29 @@ void MainWindow::on_checkBoxPID_stateChanged(int arg1)
         ui->doubleSpinBoxD->clear();
         ui->doubleSpinBoxSetpoint->clear();
     }
+}
 
-    emit response("Nice!");
+void MainWindow::on_doubleSpinBoxP_valueChanged(const QString &arg1)
+{
+    SendRequest("P");
+}
 
+void MainWindow::on_doubleSpinBoxI_valueChanged(const QString &arg1)
+{
+    SendRequest("I");
+}
+
+void MainWindow::on_doubleSpinBoxD_valueChanged(const QString &arg1)
+{
+    SendRequest("D");
+}
+
+void MainWindow::on_doubleSpinBoxSetpoint_valueChanged(const QString &arg1)
+{
+    SendRequest("Setpoint");
+}
+
+void MainWindow::on_comboBoxInput_currentTextChanged(const QString &arg1)
+{
+    SendRequest("Init");
 }

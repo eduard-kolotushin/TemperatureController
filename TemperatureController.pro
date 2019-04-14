@@ -27,12 +27,14 @@ CONFIG += c++11
 SOURCES += \
         main.cpp \
         mainwindow.cpp \
-    qcustomplot.cpp
+    qcustomplot.cpp \
+    termocontroller.cpp
 
 HEADERS += \
         mainwindow.h \
     mainwindow.h \
-    qcustomplot.h
+    qcustomplot.h \
+    termocontroller.h
 
 FORMS += \
         mainwindow.ui

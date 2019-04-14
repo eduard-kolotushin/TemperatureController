@@ -7,8 +7,6 @@ MainWindow::MainWindow(QWidget *parent) :
 {
     ui->setupUi(this); // Это QT добавил автоматически
 
-    serial = new QSerialPort();  // Создать новый объект класса "SerialPort"
-
     ui->pushButtonAction->setText("Connect"); // Кнопка работает в режиме "Подключить"
 
     QStringList Bauds; // Заполнение настройки частоты передачи данных
@@ -38,6 +36,7 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->comboBoxOutput->addItem("Out1");
 
     ui->comboBoxInput->setCurrentText("3A");
+    term.SetPortname(ui->comboBoxInput->currentText());
     ui->comboBoxOutput->setCurrentText("Out1");
 
     ui->doubleSpinBoxP->clear();
@@ -75,83 +74,34 @@ MainWindow::MainWindow(QWidget *parent) :
 
 MainWindow::~MainWindow()
 {
-    delete serial; // Удалить ненужные переменные
     delete ui;
 }
 
-QString MainWindow::GetResponse(const QString &str)
+
+
+void MainWindow::Send_request()
 {
-    QByteArray array;
-    QString temp, cmd;
-    int res = 0;
+    QString str;
+    QByteArray arr;
 
-    this->firstWaitTime = ui->spinBoxTimeout->value();
+    QString T = term.GetResponse("T");
+    QString P = term.GetResponse("Output");
 
-    if(str == "T")
-        res = 1;
-    else if(str == "Output")
-        res = 2;
-    else if(str == "P")
-        res = 3;
-    else if(str == "I")
-        res = 4;
-    else if(str == "D")
-        res = 5;
-    else if(str == "Setpoint")
-        res = 6;
-    else
-        emit response("Wrong string!!!");
+    ui->doubleSpinBoxOutputValue->setValue(P.toDouble());
+    ui->lineEditInputValue->setText(T);
 
-    switch (res) {
-    case 1:
-        cmd = ui->comboBoxInput->currentText() + ".value?\n"; break;
-    case 2:
-        cmd = ui->comboBoxOutput->currentText() + ".value?\n"; break;
-    case 3:
-        cmd = "Out1.PID.P?\n"; break;
-    case 4:
-        cmd = "Out1.PID.I?\n"; break;
-    case 5:
-        cmd = "Out1.PID.D?\n"; break;
-    case 6:
-        cmd = "Out1.PID.Setpoint?\n"; break;
-    default:
-        emit response("Error motherfucker!!!");
-    }
+    t.push_back(this->timeplot.elapsed()/1000.0);
+    Temp.push_back(T.toDouble());
 
-    serial->write(cmd.toLocal8Bit());
+    ui->Plot->graph(0)->addData(t.back(), Temp.back());
+    ui->Plot2->graph(0)->addData(t.back(), P.toDouble());
 
-    if (serial->waitForReadyRead(this->firstWaitTime)) { // Если за данное число миллисекунд что-то пришло
-        array = serial->readAll(); // Прочитать полученные данные
-        while (serial->waitForReadyRead(this->additionalWaitTime)) // Если пришло что-то ещё
-            array += serial->readAll(); // Дописать новые данные
-        temp = QString(array); // Преобразовать полученные данные в строку
-    }
-    return temp;
-}
+    ui->Plot->rescaleAxes();
+    ui->Plot2->rescaleAxes();
 
-void MainWindow::SendRequest(const QString &str)
-{
-    if(str == "Init")
-        serial->write((this->CMD1 + ui->comboBoxInput->currentText() + "\n").toLocal8Bit());
-    else if(str == "P")
-        serial->write((this->CMD2 + QString("%1").arg(ui->doubleSpinBoxP->value(),0,'g',6) + "\n").toLocal8Bit());
-    else if(str == "I")
-        serial->write((this->CMD3 + QString("%1").arg(ui->doubleSpinBoxI->value(),0,'g',6) + "\n").toLocal8Bit());
-    else if(str == "D")
-        serial->write((this->CMD4 + QString("%1").arg(ui->doubleSpinBoxD->value(),0,'g',6) + "\n").toLocal8Bit());
-    else if(str == "Setpoint")
-        serial->write((this->CMD5 + QString("%1").arg(ui->doubleSpinBoxSetpoint->value(),0,'g',6) + "\n").toLocal8Bit());
-    else if(str == "Enable")
-        serial->write((this->CMD6 + "\n").toLocal8Bit());
-    else if(str == "Disable")
-        serial->write((this->CMD7 + "\n").toLocal8Bit());
-    else if(str == "PIDOn")
-        serial->write(QByteArray("Out1.PID.Mode = on\n"));
-    else if(str == "PIDOff")
-        serial->write(QByteArray("Out1.PID.Mode = off\n"));
-    else
-        emit response("Wrong string!!!");
+    ui->Plot->replot();
+    ui->Plot2->replot();
+
     return;
 }
 
@@ -168,22 +118,21 @@ void MainWindow::on_actionCOMUPD_triggered()
 void MainWindow::on_pushButtonAction_clicked()
 {
     if (ui->pushButtonAction->text() == "Connect") { // Если нам нужно подключиться
-        serial->setPortName(ui->comboBoxCOM->currentText()); // Указание имени порта
+        term.serial->setPortName(ui->comboBoxCOM->currentText()); // Указание имени порта
 
-        serial->setBaudRate(ui->comboBoxBauds->currentText().toInt()); // Указание частоты передачи порта
+        term.serial->setBaudRate(ui->comboBoxBauds->currentText().toInt()); // Указание частоты передачи порта
 
-        serial->setFlowControl(QSerialPort::HardwareControl);
+        term.serial->setFlowControl(QSerialPort::HardwareControl);
 
-        if (!serial->open(QIODevice::ReadWrite)) { // Если попытка открыть порт для ввода\вывода не получилось
+        if (!term.serial->open(QIODevice::ReadWrite)) { // Если попытка открыть порт для ввода\вывода не получилось
             QSerialPort::SerialPortError getError = QSerialPort::NoError; // Ошибка открытия порта
-            serial->error(getError); // Получить номер ошибки
-            emit response(tr("Can't open %1, error code %2").arg(ui->comboBoxCOM->currentText()).arg(serial->error())); // Выдать сообщение об ошибке
+            term.serial->error(getError); // Получить номер ошибки
+            emit response(tr("Can't open %1, error code %2").arg(ui->comboBoxCOM->currentText()).arg(term.serial->error())); // Выдать сообщение об ошибке
 
             return;
         }
 
         ui->pushButtonAction->setText("Disconnect"); // Перевести кнопку в режим "Отключение"
-        timer.start();
 
         ui->lineEditResponse->setText(""); // Опустошить строку с последним текущим ответом
     } else { // Если нам нужно отключиться
@@ -191,7 +140,7 @@ void MainWindow::on_pushButtonAction_clicked()
 
         QTest::qWait(100);
 
-        this->serial->close(); // Закрыть открытый порт
+        this->term.serial->close(); // Закрыть открытый порт
         timer.stop();
 
         ui->pushButtonAction->setText("Connect"); // Перевести кнопку в режим "Подключение"
@@ -214,38 +163,13 @@ void MainWindow::on_pushButtonAction_clicked()
     return;
 }
 
-void MainWindow::Send_request()
-{
-    QString str;
-    QByteArray arr;
-
-    QString T = GetResponse("T");
-    QString P = GetResponse("Output");
-
-    ui->doubleSpinBoxOutputValue->setValue(P.toDouble());
-    ui->lineEditInputValue->setText(T);
-
-    //emit response("May be good");
-
-    ui->Plot->graph(0)->addData(this->timeplot.elapsed()/1000.0, T.toDouble());
-    ui->Plot2->graph(0)->addData(this->timeplot.elapsed()/1000.0, P.toDouble());
-
-    ui->Plot->rescaleAxes();
-    ui->Plot2->rescaleAxes();
-
-    ui->Plot->replot();
-    ui->Plot2->replot();
-
-    return;
-}
-
 void MainWindow::on_pushButtonSend_clicked()
 {
     QString command = ui->lineEditCommand->text(); // Получить команду из текстового поля
 
     command += "\n";
 
-    serial->write(command.toLocal8Bit()); // Передать данные по порту в битовом представлении
+    term.serial->write(command.toLocal8Bit()); // Передать данные по порту в битовом представлении
 
     on_pushButtonRecieve_clicked(); // Получить ответ
 
@@ -262,10 +186,10 @@ void MainWindow::on_pushButtonRecieve_clicked()
     this->time = QTime(0, 0, 0, 0); // Обнуление времени
     time.start(); // Начала счётчика
 
-    if (serial->waitForReadyRead(this->firstWaitTime)) { // Если за данное число миллисекунд что-то пришло
-        array = serial->readAll(); // Прочитать полученные данные
-        while (serial->waitForReadyRead(this->additionalWaitTime)) // Если пришло что-то ещё
-            array += serial->readAll(); // Дописать новые данные
+    if (term.serial->waitForReadyRead(this->firstWaitTime)) { // Если за данное число миллисекунд что-то пришло
+        array = term.serial->readAll(); // Прочитать полученные данные
+        while (term.serial->waitForReadyRead(this->additionalWaitTime)) // Если пришло что-то ещё
+            array += term.serial->readAll(); // Дописать новые данные
         temp = QString(array); // Преобразовать полученные данные в строку
 
         ui->lineEditTTR->setText(QString::number(time.elapsed()-this->additionalWaitTime)); // Записать время отклика
@@ -289,24 +213,37 @@ void MainWindow::get_response(const QString &s)
 
 void MainWindow::on_pushButtonHeat_clicked()
 {
-    SendRequest("Enable");
-    this->timeplot.start();
+    if(ui->pushButtonHeat->text() == ("Heat"))
+    {
+        timer.start();
+        term.SendRequest("Enable");
+        if(this->timeplot.elapsed() == 0)
+            this->timeplot.start();
+        ui->pushButtonHeat->text() = "Disable";
+    }
+    else
+    {
+        term.SendRequest("Disable");
+        ui->pushButtonHeat->text() = "Heat";
+    }
+    return;
 }
 
 void MainWindow::on_pushButtonDisable_clicked()
 {
-    SendRequest("Disable");
+    timer.stop();
+    return;
 }
 
 void MainWindow::on_checkBoxPID_stateChanged(int arg1)
 {
     QString str;
     if(arg1 > 0) {
-        SendRequest("PIDOn");
-        SendRequest("Init");
+        term.SendRequest("PIDOn");
+        term.SendRequest("Init");
     }
     else {
-        SendRequest("PIDOff");
+        term.SendRequest("PIDOff");
     }
 
     ui->doubleSpinBoxP->setEnabled(arg1 > 0);
@@ -316,10 +253,10 @@ void MainWindow::on_checkBoxPID_stateChanged(int arg1)
 
     if(arg1 > 0)
     {
-        ui->doubleSpinBoxP->setValue(GetResponse("P").toDouble());
-        ui->doubleSpinBoxI->setValue(GetResponse("I").toDouble());
-        ui->doubleSpinBoxD->setValue(GetResponse("D").toDouble());
-        ui->doubleSpinBoxSetpoint->setValue(GetResponse("Setpoint").toDouble());
+        ui->doubleSpinBoxP->setValue(term.GetP());
+        ui->doubleSpinBoxP->setValue(term.GetI());
+        ui->doubleSpinBoxP->setValue(term.GetD());
+        ui->doubleSpinBoxP->setValue(term.GetSetpoint());
     }
     else
     {
@@ -332,25 +269,70 @@ void MainWindow::on_checkBoxPID_stateChanged(int arg1)
 
 void MainWindow::on_doubleSpinBoxP_valueChanged(const QString &arg1)
 {
-    SendRequest("P");
+    term.SetP(arg1.toDouble());
 }
 
 void MainWindow::on_doubleSpinBoxI_valueChanged(const QString &arg1)
 {
-    SendRequest("I");
+    term.SetI(arg1.toDouble());
 }
 
 void MainWindow::on_doubleSpinBoxD_valueChanged(const QString &arg1)
 {
-    SendRequest("D");
+    term.SetD(arg1.toDouble());
 }
 
 void MainWindow::on_doubleSpinBoxSetpoint_valueChanged(const QString &arg1)
 {
-    SendRequest("Setpoint");
+    term.SetSetpoint(arg1.toDouble());
 }
 
 void MainWindow::on_comboBoxInput_currentTextChanged(const QString &arg1)
 {
-    SendRequest("Init");
+    term.SetPortname(arg1);
+}
+
+void MainWindow::on_pushButtonSave_clicked()
+{
+    if(ui->lineEditFilename->text() == nullptr)
+        emit response("Wrong!!!");
+    else
+    {
+        QFile file(ui->lineEditFilename->text());
+        file.open(QIODevice::WriteOnly);
+        QTextStream out(&file);
+        for(int i = 0; i < t.size(); i++)
+        {
+            out << QString(tr("%1").arg(t[i])) << " " << QString(tr("%1").arg(Temp[i])) << "\n";
+        }
+        file.close();
+    }
+}
+
+void MainWindow::on_pushButtonChoose_clicked()
+{
+    QString fileName = QFileDialog::getOpenFileName(this, tr("Open File with Data"), "",
+                                                    tr("Text Files (*.txt);; All Files (*.*)"));
+    ui->lineEditImport->setText(fileName);
+}
+
+void MainWindow::on_pushButtonImport_clicked()
+{
+    QFile file(ui->lineEditImport->text());
+    if(!file.open(QFile::ReadOnly | QFile::Text)) {
+        emit response("Can't open!");
+        return;
+    }
+    QTextStream in(&file);
+    QVector<double> xTemp;
+    QVector<double> yTemp;
+    while(!in.atEnd()) {
+        QString temp = in.readLine();
+        QStringList temp2 = temp.split(" ");
+        xTemp.push_back(temp2[0].toDouble());
+        yTemp.push_back(temp2[1].toDouble());
+    }
+    ui->Plot->graph(0)->setData(xTemp,yTemp);
+    ui->Plot->rescaleAxes();
+    ui->Plot->replot();
 }

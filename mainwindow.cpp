@@ -47,6 +47,8 @@ MainWindow::MainWindow(QWidget *parent) :
 
     on_actionCOMUPD_triggered(); // Обнновить список доступных портов
 
+    connect(ui->actionCOM_update, SIGNAL(triggered()), this, SLOT(on_actionCOMUPD_triggered()));
+
     connect(this, SIGNAL(response(QString)),
             this, SLOT(get_response(QString))); // Подключить сигнал получения ответа к слоту
     timer.setInterval(200);
@@ -70,6 +72,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
 
     ui->Plot2->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
+    ui->groupBoxComunication->setVisible(false);
 }
 
 MainWindow::~MainWindow()
@@ -219,12 +222,12 @@ void MainWindow::on_pushButtonHeat_clicked()
         term.SendRequest("Enable");
         if(this->timeplot.elapsed() == 0)
             this->timeplot.start();
-        ui->pushButtonHeat->text() = "Disable";
+        ui->pushButtonHeat->setText("Disable");
     }
     else
     {
         term.SendRequest("Disable");
-        ui->pushButtonHeat->text() = "Heat";
+        ui->pushButtonHeat->setText("Heat");
     }
     return;
 }
@@ -240,7 +243,7 @@ void MainWindow::on_checkBoxPID_stateChanged(int arg1)
     QString str;
     if(arg1 > 0) {
         term.SendRequest("PIDOn");
-        term.SendRequest("Init");
+        term.SetPortname(ui->comboBoxInput->currentText());
     }
     else {
         term.SendRequest("PIDOff");
@@ -254,9 +257,9 @@ void MainWindow::on_checkBoxPID_stateChanged(int arg1)
     if(arg1 > 0)
     {
         ui->doubleSpinBoxP->setValue(term.GetP());
-        ui->doubleSpinBoxP->setValue(term.GetI());
-        ui->doubleSpinBoxP->setValue(term.GetD());
-        ui->doubleSpinBoxP->setValue(term.GetSetpoint());
+        ui->doubleSpinBoxI->setValue(term.GetI());
+        ui->doubleSpinBoxD->setValue(term.GetD());
+        ui->doubleSpinBoxSetpoint->setValue(term.GetSetpoint());
     }
     else
     {
@@ -269,22 +272,22 @@ void MainWindow::on_checkBoxPID_stateChanged(int arg1)
 
 void MainWindow::on_doubleSpinBoxP_valueChanged(const QString &arg1)
 {
-    term.SetP(arg1.toDouble());
+    term.SetP(ui->doubleSpinBoxP->value());
 }
 
 void MainWindow::on_doubleSpinBoxI_valueChanged(const QString &arg1)
 {
-    term.SetI(arg1.toDouble());
+    term.SetI(ui->doubleSpinBoxI->value());
 }
 
 void MainWindow::on_doubleSpinBoxD_valueChanged(const QString &arg1)
 {
-    term.SetD(arg1.toDouble());
+    term.SetD(ui->doubleSpinBoxD->value());
 }
 
 void MainWindow::on_doubleSpinBoxSetpoint_valueChanged(const QString &arg1)
 {
-    term.SetSetpoint(arg1.toDouble());
+    term.SetSetpoint(ui->doubleSpinBoxSetpoint->value());
 }
 
 void MainWindow::on_comboBoxInput_currentTextChanged(const QString &arg1)
@@ -335,4 +338,9 @@ void MainWindow::on_pushButtonImport_clicked()
     ui->Plot->graph(0)->setData(xTemp,yTemp);
     ui->Plot->rescaleAxes();
     ui->Plot->replot();
+}
+
+void MainWindow::on_actionCommands_triggered()
+{
+    ui->groupBoxComunication->setVisible(true);
 }

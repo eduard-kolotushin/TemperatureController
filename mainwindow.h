@@ -70,6 +70,7 @@ private slots:
 
     void on_pushButtonImport_clicked();
 
+    void on_actionCommands_triggered();
 
 signals:
     void response(const QString &s); // Отправка ответа в слот
